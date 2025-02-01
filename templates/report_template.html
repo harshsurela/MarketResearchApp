@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <title>{{ title }} - Market Research Report</title>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                line-height: 1.6;
+                color: #333;
+                margin: 40px;
+            }
+            .header {
+                text-align: center;
+                margin-bottom: 40px;
+            }
+            .title {
+                font-size: 24px;
+                font-weight: bold;
+                color: #1a73e8;
+            }
+            .date {
+                color: #666;
+                margin-top: 10px;
+            }
+            .toc {
+                margin: 20px 0;
+                page-break-after: always;
+            }
+            .section {
+                margin-top: 30px;
+                page-break-before: always;
+            }
+            .section-title {
+                color: #1a73e8;
+                font-size: 20px;
+                border-bottom: 2px solid #1a73e8;
+                padding-bottom: 5px;
+                margin-bottom: 20px;
+            }
+            .chart {
+                margin: 20px 0;
+                text-align: center;
+            }
+            .chart img {
+                max-width: 100%;
+                height: auto;
+            }
+            .footer {
+                text-align: center;
+                margin-top: 40px;
+                font-size: 12px;
+                color: #666;
+            }
+            table {
+                width: 100%;
+                border-collapse: collapse;
+                margin: 20px 0;
+            }
+            th,
+            td {
+                border: 1px solid #ddd;
+                padding: 8px;
+                text-align: left;
+            }
+            th {
+                background-color: #f8f9fa;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <div class="title">{{ title }}</div>
+            <div class="date">Generated on {{ generated_date }}</div>
+        </div>
+
+        <div class="toc">
+            <h2>Table of Contents</h2>
+            <ul>
+                {% for item in toc %}
+                <li><a href="#{{ item.id }}">{{ item.name }}</a></li>
+                {% endfor %}
+            </ul>
+        </div>
+
+        {% for section in sections %}
+        <div class="section" id="{{ section.id }}">
+            <h2 class="section-title">{{ section.name }}</h2>
+            <div class="content">{{ section.content | safe }}</div>
+            {% if section.charts %}
+            <div class="charts">
+                {% for chart in section.charts %}
+                <div class="chart">
+                    <img src="{{ chart }}" alt="Chart for {{ section.name }}" />
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+
+        <div class="footer">
+            <p>
+                This report was automatically generated using advanced market
+                research AI.
+            </p>
+            <p>© {{ generated_date[:4] }} Market Research Generator</p>
+        </div>
+    </body>
+</html>

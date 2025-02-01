@@ -1,136 +1,178 @@
 import streamlit as st
-from datetime import datetime
 import time
-from src.thinking_module import BrainStormEngine
-from src.retrieval import GoogleRetrieval
+from datetime import datetime
+import json
+import os
+import asyncio
+import logging
+from typing import Callable, Dict, Any
+from src.generator import ReportGenerator
 from src.llm import GroqLLM
+from src.retrieval import GoogleRetrieval
+from src.pdf_generator import PDFGenerator
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-def initialize_session():
-    if "active_session" not in st.session_state:
-        st.session_state.active_session = False
-    if "research_progress" not in st.session_state:
-        st.session_state.research_progress = []
-    if "toc" not in st.session_state:
-        st.session_state.toc = []
-    if "llm" not in st.session_state:
-        # Initialize GroqLLM with multiple API keys
-        api_keys = [
-            st.secrets.get(f"GROQ_API_KEY_{i}") for i in range(1, 6)
-        ]
-        print(api_keys)
-        st.session_state.llm = GroqLLM(api_keys=api_keys)
-    if "retriever" not in st.session_state:
-        st.session_state.retriever = GoogleRetrieval(st.secrets["GOOGLE_API_KEY"], st.secrets["GOOGLE_CSE_ID"])
+# Page configuration
+st.set_page_config(
+    page_title="Market Research Report Generator",
+    page_icon="📊",
+    layout="wide"
+)
 
-def sidebar_navigation():
-    with st.sidebar:
-        st.title("Navigation")
+async def generate_report_async(topic: str, progress_callback: Callable) -> Dict[str, Any]:
+    """Generate report asynchronously with proper error handling"""
+    try:
+        # Get API keys from secrets
+        api_keys = []
+        for i in range(1, 6):  # Try to get up to 5 API keys
+            key = st.secrets.get(f"GROQ_API_KEY_{i}")
+            if key and key.strip():
+                api_keys.append(key.strip())
 
-        # New Session Button
-        if st.button("+ New Session", use_container_width=True):
-            st.session_state.active_session = True
-            st.session_state.research_progress = []
-            st.rerun()
+        if not api_keys:
+            raise ValueError("No API keys found in secrets")
 
-        # Navigation Links
-        st.button("🔍 Discover", use_container_width=True)
-        st.button("📚 My Library", use_container_width=True)
+        logger.info(f"Initialized with {len(api_keys)} API keys")
 
-        # Table of Contents
-        if st.session_state.toc:
-            st.markdown("### Table of Contents")
-            for item in st.session_state.toc:
-                st.markdown(f"- {item}")
+        # Initialize components
+        llm = GroqLLM(api_keys=api_keys)
+        retriever = GoogleRetrieval(
+            st.secrets["GOOGLE_API_KEY"],
+            st.secrets["GOOGLE_CSE_ID"]
+        )
 
-def display_thinking_progress():
-    print("In display")
-    progress = st.progress(0)
-    status = st.empty()
+        # Create generator
+        generator = ReportGenerator(llm, retriever)
 
-    stages = [
-        ("Knowledge Curation", "Gathering and organizing information..."),
-        ("Outline Generation", "Creating detailed outline..."),
-        ("Report Generation", "Generating comprehensive report..."),
-        ("Content Polish", "Polishing and refining content...")
-    ]
+        # Generate report
+        return await generator.generate_full_report(topic, progress_callback)
 
-    for i, (stage, message) in enumerate(stages):
-        status.write(f"**{stage}:** {message}")
-        progress.progress((i + 1) * 25)
-        time.sleep(1)
+    except Exception as e:
+        logger.error(f"Error in report generation: {str(e)}")
+        raise
 
-def main():
-    st.set_page_config(page_title="Research Brainstorming", layout="wide")
-    initialize_session()
+def save_report(report_data: Dict[str, Any], format: str = 'json') -> str:
+    """Save report to file system"""
+    try:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        base_filename = f"{timestamp}_{report_data['topic'].replace(' ', '_')}"
 
-    # Sidebar Navigation
-    sidebar_navigation()
+        os.makedirs("reports", exist_ok=True)
 
-    # Main Content
-    st.title("🧠 Research Brainstorming")
+        if format == 'json':
+            filename = f"reports/{base_filename}.json"
+            with open(filename, 'w', encoding='utf-8') as f:
+                json.dump(report_data, f, indent=4, ensure_ascii=False)
+        elif format == 'pdf':
+            filename = f"reports/{base_filename}.pdf"
+            pdf_generator = PDFGenerator()
+            pdf_content = pdf_generator.generate_pdf(report_data)
+            with open(filename, 'wb') as f:
+                f.write(pdf_content)
 
-    if not st.session_state.active_session:
-        st.info("Click '+ New Session' to start a new research session")
-        return
+        logger.info(f"Report saved to {filename}")
+        return filename
 
-    # Topic Input
-    topic = st.text_input("Research Topic", placeholder="Enter your research topic...")
+    except Exception as e:
+        logger.error(f"Error saving report: {str(e)}")
+        raise
 
-    # Advanced Settings
-    with st.expander("Advanced Settings"):
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            max_tokens = st.slider("Max Tokens", 1000, 4096, 2000)
-        with col2:
-            temperature = st.slider("Temperature", 0.0, 1.0, 0.7)
-        with col3:
-            research_depth = st.select_slider(
-                "Research Depth",
-                options=["Basic", "Standard", "Comprehensive"],
-                value="Standard"
-            )
+def display_report_content(report_data: Dict[str, Any]):
+    """Display report content in a structured way"""
+    st.title(report_data['topic'])
+    st.write(f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
-    if topic and st.button("Start Research"):
+    # Display table of contents
+    st.header("Table of Contents")
+    for section_name in report_data['content'].keys():
+        st.write(f"- {section_name}")
+
+    # Display each section
+    for section_name, content in report_data['content'].items():
+        with st.expander(f"📄 {section_name}", expanded=True):
+            st.markdown(content)
+
+def generate_report_page():
+    """Main report generation page"""
+    st.title("🎯 Market Research Report Generator")
+
+    # Add description
+    st.write("""
+    Generate comprehensive market research reports with AI assistance.
+    The report will be approximately 15 pages long and include detailed analysis,
+    charts, and citations.
+    """)
+
+    # Input section
+    topic = st.text_input(
+        "Research Topic",
+        help="Enter the topic for your market research report",
+        placeholder="e.g., Electric Vehicle Market in Europe"
+    )
+
+    if st.button("🚀 Generate Report", disabled=not topic, type="primary"):
         try:
-            # Initialize BrainStorm Engine
-            engine = BrainStormEngine(
-                st.session_state.llm,
-                st.session_state.retriever
-            )
+            with st.spinner("Initializing report generation..."):
+                # Progress tracking
+                progress_container = st.container()
+                progress_bar = progress_container.progress(0)
+                status_text = progress_container.empty()
 
-            # Display thinking progress
-            display_thinking_progress()
+                def update_progress(status: str, progress: float):
+                    status_text.text(f"Status: {status}")
+                    progress_bar.progress(progress)
+                    logger.info(f"Progress: {status} - {progress:.2%}")
 
-            # Generate comprehensive report
-            report_data = engine.generate_comprehensive_report(
-                topic,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                research_depth=research_depth
-            )
+                # Generate report
+                report_data = asyncio.run(
+                    generate_report_async(topic, update_progress)
+                )
 
-            # Display results
-            st.success("Research completed successfully!")
+                # Save reports
+                json_filename = save_report(report_data, 'json')
+                pdf_filename = save_report(report_data, 'pdf')
 
-            # Display outline
-            with st.expander("📋 Research Outline", expanded=True):
-                st.markdown(report_data["outline"])
+                # Show success message
+                st.success("✅ Report generated successfully!")
 
-            # Display full report
-            st.markdown("### 📑 Comprehensive Report")
-            st.markdown(report_data["content"])
+                # Display content
+                st.header("📑 Report Preview")
+                display_report_content(report_data)
 
-            # Display references
-            with st.expander("📚 References", expanded=False):
-                for i, ref in enumerate(report_data["references"], 1):
-                    st.markdown(f"{i}. [{ref['title']}]({ref['url']})")
+                # Download buttons
+                col1, col2 = st.columns(2)
+                with col1:
+                    with open(json_filename, 'r', encoding='utf-8') as f:
+                        st.download_button(
+                            label="📥 Download JSON Report",
+                            data=f.read(),
+                            file_name=f"{topic.replace(' ', '_')}_report.json",
+                            mime="application/json"
+                        )
 
-            # Save to session state
-            st.session_state.research_progress.append(report_data)
+                with col2:
+                    with open(pdf_filename, 'rb') as f:
+                        st.download_button(
+                            label="📥 Download PDF Report",
+                            data=f.read(),
+                            file_name=f"{topic.replace(' ', '_')}_report.pdf",
+                            mime="application/pdf"
+                        )
 
         except Exception as e:
-            st.error(f"Error during research: {str(e)}")
+            st.error("❌ Failed to generate report")
+            st.error(f"Error details: {str(e)}")
+            logger.error(f"Report generation failed: {str(e)}", exc_info=True)
+
+            with st.expander("Show detailed error information"):
+                st.code(str(e))
 
 if __name__ == "__main__":
-    main()
+    try:
+        generate_report_page()
+    except Exception as e:
+        st.error("Application error occurred")
+        logger.error("Application error", exc_info=True)
