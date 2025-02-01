@@ -6,8 +6,39 @@ import pandas as pd
 
 def load_report(filename: str) -> dict:
     """Load report from JSON file"""
-    with open(os.path.join("reports", filename), 'r', encoding='utf-8') as f:
-        return json.load(f)
+    try:
+        with open(os.path.join("reports", filename), 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        st.error(f"Error loading report: {str(e)}")
+        return None
+
+def display_report_content(report_data: dict):
+    """Display report content in a structured way"""
+    try:
+        st.title(report_data['topic'])
+        st.write(f"Generated on: {report_data['metadata']['generated_date'][:10]}")
+
+        # Display table of contents
+        st.header("Table of Contents")
+        for section_name in report_data['content'].keys():
+            st.write(f"- {section_name}")
+
+        # Display each section with its charts
+        for section_name, content in report_data['content'].items():
+            with st.expander(f"📄 {section_name}", expanded=True):
+                # Display section content
+                st.markdown(content)
+
+                # Display charts if available
+                if section_name in report_data.get('charts', {}) and report_data['charts'][section_name]:
+                    st.subheader("📊 Charts and Visualizations")
+                    for chart_base64 in report_data['charts'][section_name]:
+                        if chart_base64:  # Check if chart data exists
+                            st.image(chart_base64)
+
+    except Exception as e:
+        st.error(f"Error displaying report content: {str(e)}")
 
 def view_reports_page():
     st.title("📚 View Reports")
@@ -29,34 +60,37 @@ def view_reports_page():
     for filename in report_files:
         try:
             report = load_report(filename)
-            report_data.append({
-                'Date': datetime.strptime(
-                    filename.split('_')[0],
-                    '%Y%m%d'
-                ).strftime('%Y-%m-%d'),
-                'Topic': report['topic'],
-                'Filename': filename
-            })
+            if report:  # Only add if report loaded successfully
+                report_data.append({
+                    'Date': datetime.strptime(
+                        filename.split('_')[0],
+                        '%Y%m%d'
+                    ).strftime('%Y-%m-%d'),
+                    'Topic': report['topic'],
+                    'Filename': filename,
+                    'Generated': report['metadata']['generated_date'][:10]
+                })
         except Exception as e:
-            st.error(f"Error loading report {filename}: {str(e)}")
+            st.error(f"Error processing report {filename}: {str(e)}")
+
+    if not report_data:
+        st.warning("No valid reports found.")
+        return
 
     df = pd.DataFrame(report_data)
 
-    # Filters
-    st.subheader("🔍 Filter Reports")
-    col1, col2 = st.columns(2)
+    # Filters in sidebar
+    st.sidebar.header("🔍 Filter Reports")
 
-    with col1:
-        selected_date = st.selectbox(
-            "Select Date",
-            options=['All'] + sorted(df['Date'].unique().tolist())
-        )
+    selected_date = st.sidebar.selectbox(
+        "Select Date",
+        options=['All'] + sorted(df['Date'].unique().tolist())
+    )
 
-    with col2:
-        selected_topic = st.selectbox(
-            "Select Topic",
-            options=['All'] + sorted(df['Topic'].unique().tolist())
-        )
+    selected_topic = st.sidebar.selectbox(
+        "Select Topic",
+        options=['All'] + sorted(df['Topic'].unique().tolist())
+    )
 
     # Filter dataframe
     filtered_df = df.copy()
@@ -67,39 +101,57 @@ def view_reports_page():
 
     # Display reports
     st.subheader("📑 Available Reports")
-    for _, row in filtered_df.iterrows():
-        with st.expander(f"{row['Topic']} - {row['Date']}", expanded=False):
-            try:
-                report = load_report(row['Filename'])
 
-                # Display report content
-                st.markdown(report['content'])
+    # Create a table of available reports
+    st.dataframe(
+        filtered_df[['Date', 'Topic', 'Generated']],
+        hide_index=True,
+        use_container_width=True
+    )
 
-                # Download buttons
-                col1, col2 = st.columns(2)
+    # Display selected report
+    selected_report = st.selectbox(
+        "Select a report to view:",
+        filtered_df['Filename'].tolist(),
+        format_func=lambda x: f"{filtered_df[filtered_df['Filename']==x]['Topic'].iloc[0]} ({filtered_df[filtered_df['Filename']==x]['Date'].iloc[0]})"
+    )
 
-                with col1:
-                    pdf_filename = os.path.splitext(row['Filename'])[0] + '.pdf'
-                    if os.path.exists(os.path.join(reports_dir, pdf_filename)):
-                        with open(os.path.join(reports_dir, pdf_filename), 'rb') as pdf_file:
-                            st.download_button(
-                                label="📥 Download PDF",
-                                data=pdf_file,
-                                file_name=pdf_filename,
-                                mime="application/pdf"
-                            )
-
-                with col2:
-                    with open(os.path.join(reports_dir, row['Filename']), 'rb') as json_file:
+    if selected_report:
+        report = load_report(selected_report)
+        if report:
+            # Download buttons
+            col1, col2 = st.columns(2)
+            with col1:
+                pdf_filename = os.path.splitext(selected_report)[0] + '.pdf'
+                if os.path.exists(os.path.join(reports_dir, pdf_filename)):
+                    with open(os.path.join(reports_dir, pdf_filename), 'rb') as pdf_file:
                         st.download_button(
-                            label="📥 Download JSON",
-                            data=json_file,
-                            file_name=row['Filename'],
-                            mime="application/json"
+                            label="📥 Download PDF Report",
+                            data=pdf_file,
+                            file_name=pdf_filename,
+                            mime="application/pdf"
                         )
 
-            except Exception as e:
-                st.error(f"Error displaying report: {str(e)}")
+            with col2:
+                with open(os.path.join(reports_dir, selected_report), 'rb') as json_file:
+                    st.download_button(
+                        label="📥 Download JSON Report",
+                        data=json_file,
+                        file_name=selected_report,
+                        mime="application/json"
+                    )
+
+            # Display report content
+            st.markdown("---")
+            display_report_content(report)
 
 if __name__ == "__main__":
-    view_reports_page()
+    try:
+        st.set_page_config(
+            page_title="View Reports - Market Research Generator",
+            page_icon="📊",
+            layout="wide"
+        )
+        view_reports_page()
+    except Exception as e:
+        st.error(f"Application error: {str(e)}")

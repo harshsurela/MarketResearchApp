@@ -53,7 +53,6 @@ async def generate_report_async(topic: str, progress_callback: Callable) -> Dict
     except Exception as e:
         logger.error(f"Error in report generation: {str(e)}")
         raise
-
 def save_report(report_data: Dict[str, Any], format: str = 'json') -> str:
     """Save report to file system"""
     try:
@@ -64,22 +63,30 @@ def save_report(report_data: Dict[str, Any], format: str = 'json') -> str:
 
         if format == 'json':
             filename = f"reports/{base_filename}.json"
+            # Create a copy of the report data for saving
+            save_data = {
+                "topic": report_data["topic"],
+                "content": report_data["content"],
+                "charts": report_data.get("charts", {}),  # Now contains base64 strings
+                "metadata": report_data.get("metadata", {})
+            }
+
             with open(filename, 'w', encoding='utf-8') as f:
-                json.dump(report_data, f, indent=4, ensure_ascii=False)
+                json.dump(save_data, f, indent=4, ensure_ascii=False)
+
         elif format == 'pdf':
             filename = f"reports/{base_filename}.pdf"
             pdf_generator = PDFGenerator()
             pdf_content = pdf_generator.generate_pdf(report_data)
+
             with open(filename, 'wb') as f:
                 f.write(pdf_content)
 
-        logger.info(f"Report saved to {filename}")
         return filename
 
     except Exception as e:
-        logger.error(f"Error saving report: {str(e)}")
+        logging.error(f"Error saving report: {str(e)}")
         raise
-
 def display_report_content(report_data: Dict[str, Any]):
     """Display report content in a structured way"""
     st.title(report_data['topic'])
@@ -90,11 +97,16 @@ def display_report_content(report_data: Dict[str, Any]):
     for section_name in report_data['content'].keys():
         st.write(f"- {section_name}")
 
-    # Display each section
+    # Display each section with its charts
     for section_name, content in report_data['content'].items():
         with st.expander(f"📄 {section_name}", expanded=True):
             st.markdown(content)
 
+            # Display charts if available
+            if section_name in report_data.get('charts', {}):
+                st.subheader("📊 Charts and Visualizations")
+                for chart_base64 in report_data['charts'][section_name]:
+                    st.image(chart_base64)
 def generate_report_page():
     """Main report generation page"""
     st.title("🎯 Market Research Report Generator")

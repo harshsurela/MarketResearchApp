@@ -10,7 +10,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class GroqLLM:
-    def __init__(self, api_keys: List[str], model: str = "mixtral-8x7b-32768"):
+    def __init__(self, api_keys: List[str], model: str = "deepseek-r1-distill-llama-70b"):
         """Initialize the GroqLLM instance with multiple API keys"""
         self.api_keys = [key.strip() for key in api_keys if key.strip()]
         if not self.api_keys:

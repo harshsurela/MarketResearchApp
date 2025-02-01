@@ -499,7 +499,7 @@ class AppConfig:
     GROQ_API_KEYS: List[str]
     GOOGLE_API_KEY: str
     GOOGLE_CSE_ID: str
-    MODEL: str = "mixtral-8x7b-32768"  # Updated default model
+    MODEL: str = "deepseek-r1-distill-llama-70b	"  # Updated default model
     MAX_TOKENS: int = 32768
     TEMPERATURE: float = 0.7
     TOP_P: float = 0.9
